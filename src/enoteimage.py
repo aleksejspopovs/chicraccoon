@@ -64,8 +64,8 @@ class EnoteImageLayer:
                 corrected_data.append(0x11 * (a >> 4))
                 corrected_data.append(0x11 * (a & 0xF))
 
-        return Image.frombytes('L', self.mode.dimensions(),
-            bytes(corrected_data))
+        return Image.frombuffer('L', self.mode.dimensions(),
+            bytes(corrected_data), 'raw', 'L', 0, 1)
 
 
 class EnoteImage:
@@ -99,3 +99,6 @@ class EnoteImage:
 
     def list_layers(self):
         return iter(self.layers)
+
+    def layer_count(self):
+        return len(self.layers)
