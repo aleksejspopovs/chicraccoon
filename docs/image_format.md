@@ -28,9 +28,9 @@ All integers are little-endian. Layer data sizes do not include padding.
 
 # Layer data: thumbnails
 
-Thumbnails are stored as raw pixels in almost row-major order, then padded with zeroes so that the total length is a multiple of 512.
+Thumbnails are stored as raw pixels in row-major order, then padded with zeroes so that the total length is a multiple of 512.
 
-Quadruplets of adjacent pixels X, Y, Z, W are encoded as two bytes `ZW XY` (remember that pixels are 4 bits).
+Pairs of adjacent pixels XY are encoded as one byte `XY` (remember that pixels are 4 bits).
 
 The size of the image is not stored anywhere, but it is 150x175 for a thumbnail.
 
@@ -38,6 +38,6 @@ The size of the image is not stored anywhere, but it is 150x175 for a thumbnail.
 
 Layer data is compressed using Ross Williams' [LZRW3](https://web.archive.org/web/20170331101417/http://www.ross.net/compression/lzrw3.html), then padded with zeroes so that the total length is a multiple of 512.
 
-After decompression, layer data contains pixels represented in the same way as in thumbnails (but with no padding).
+After decompression, layer data contains raw pixels represented in almost row-major order. Quadruplets of adjacent pixels X, Y, Z, W are encoded as two bytes `ZW XY`, probably due to some endianness-related messup.
 
 The size of the image is not stored anywhere, but it is 600x700 for a full-size image.
