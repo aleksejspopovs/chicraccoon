@@ -13,6 +13,7 @@ class EnoteImageMode(Enum):
     full_size = 1
     uform_thumb = 2
     notebook = 3
+    schedule = 4
 
     def dimensions(self):
         if self == EnoteImageMode.thumbnail:
@@ -23,6 +24,8 @@ class EnoteImageMode(Enum):
             return (156, 193)
         elif self == EnoteImageMode.notebook:
             return (220, 292)
+        elif self == EnoteImageMode.schedule:
+            return (220, 224)
         assert False
 
     def needs_endianness_hack(self):

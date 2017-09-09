@@ -46,6 +46,7 @@ Layer data does not contain any information about the dimensions of the image, s
 | most thumbnails | 150x175 | normal |
 | uform thumbnails (layers 1 and 2 in `UFORM/*.RAW` contain two thumbnails for a refill in --- one "normal" and one "selected") | 156x193 | messed up |
 | notebook covers | 220x292 | normal |
+| schedule covers | 220x224 | normal |
 
 Size of layer data is always `(width * height) / 2` after uncompression (because each byte represents two pixels).
 
