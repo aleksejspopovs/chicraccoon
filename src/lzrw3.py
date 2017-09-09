@@ -1,3 +1,5 @@
+import io
+
 # This is a Python implementation of LZRW3, a data compression algorithm
 # invented by Ross Williams and placed in the public domain.
 # More information about the algorithm, including a reference implementation in
@@ -5,6 +7,12 @@
 # https://web.archive.org/web/20170331101417/http://www.ross.net/compression/lzrw3.html
 
 def lzrw3_decompress(instream):
+    if isinstance(instream, bytes):
+        instream = io.BytesIO(instream)
+    elif isinstance(instream, list):
+        instream = io.BytesIO(bytes(instream))
+
+
     def read_byte():
         byte = instream.read(1)
         if len(byte) == 0:
@@ -26,12 +34,7 @@ def lzrw3_decompress(instream):
     flag, *_ = [read_byte() for _ in range(4)]
 
     if flag == 1: # FLAG_COPY
-        result.append(read_byte())
-        while result[-1] is not None:
-            result.append(read_byte())
-        result.pop()
-
-        return result
+        return instream.read()
 
 
     control = 1
@@ -75,13 +78,12 @@ def lzrw3_decompress(instream):
                 literals -= 1
 
 
-    return result
+    return bytes(result)
 
 
 def test_lzrw3():
-    import io
     def test(comp, decomp):
-        result = bytes(lzrw3_decompress(io.BytesIO(comp)))
+        result = lzrw3_decompress(comp)
         assert result == decomp
 
     test(b'\x00\x00\x00\x00\xf0\xff\x68\x61\x68\x61\x0f\xe8',
