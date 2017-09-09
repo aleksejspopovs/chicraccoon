@@ -40,4 +40,7 @@ Layer data is compressed using Ross Williams' [LZRW3](https://web.archive.org/we
 
 After decompression, layer data contains raw pixels represented in almost row-major order. Quadruplets of adjacent pixels X, Y, Z, W are encoded as two bytes `ZW XY`, probably due to some endianness-related messup.
 
-The size of the image is not stored anywhere, but it is 600x700 for a full-size image.
+The size of the image is not stored anywhere, but it is 600x700 for a full-size image, with one exception: files in `UFORM/*` are marked as full-size, but they contain three layers:
+
+  - one with size 600x700 containing the refill itself
+  - two with size 156x193 containing the thumbnail for the refill (in normal and selected state)

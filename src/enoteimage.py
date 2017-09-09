@@ -11,12 +11,15 @@ from lzrw3 import lzrw3_decompress
 class EnoteImageMode(Enum):
     thumbnail = 0
     full_size = 1
+    uform_thumb = 2
 
     def dimensions(self):
         if self == EnoteImageMode.thumbnail:
             return (150, 175)
         elif self == EnoteImageMode.full_size:
             return (600, 700)
+        elif self == EnoteImageMode.uform_thumb:
+            return (156, 193)
         assert False
 
 
@@ -31,7 +34,8 @@ class EnoteImageLayer:
     def to_pil(self):
         corrected_data = []
 
-        if self.mode == EnoteImageMode.full_size:
+        if (self.mode == EnoteImageMode.full_size) or \
+           (self.mode == EnoteImageMode.uform_thumb):
             # note that this would skip the last byte if pixel_data could ever
             # have odd length (but it cannot)
             for i in range(len(self.pixel_data) // 2):
@@ -53,12 +57,11 @@ class EnoteImage:
     def __init__(self, data):
         self.data = data
         self.layers = []
-        self.mode = None
         self._parse_layers()
 
     def _parse_layers(self):
         num_layers, mode = struct.unpack('<HH', self.data[:4])
-        self.mode = EnoteImageMode(mode)
+        mode = EnoteImageMode(mode)
 
         layer_sizes = []
         for i in range(num_layers):
@@ -67,12 +70,19 @@ class EnoteImage:
 
         skip = 512
 
-        for layer_size in layer_sizes:
+        for i, layer_size in enumerate(layer_sizes):
             pixel_data = self.data[skip:skip+layer_size]
-            if self.mode == EnoteImageMode.full_size:
+            if mode == EnoteImageMode.full_size:
                 pixel_data = lzrw3_decompress(pixel_data)
 
-            self.layers.append(EnoteImageLayer(self.mode, pixel_data))
+            layer_mode = mode
+            if (mode == EnoteImageMode.full_size) and \
+               (len(layer_sizes) == 3) and (i > 0):
+               # uforms contain 3 layers and are marked as full-size,
+               # but the latter two layers are actually thumbs
+               layer_mode = EnoteImageMode.uform_thumb
+
+            self.layers.append(EnoteImageLayer(layer_mode, pixel_data))
 
             size_padded = (layer_size >> 9) << 9
             if layer_size & ((1 << 9) - 1) != 0:
