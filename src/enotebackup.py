@@ -1,6 +1,6 @@
 import io
 
-from collections import namedtuple
+from collections import namedtuple, OrderedDict
 
 from enoteimage import EnoteImage
 
@@ -17,7 +17,7 @@ EnoteBackupFile = namedtuple('EnoteBackupFile',
 class EnoteBackup:
     def __init__(self, filename, mode='rb'):
         self.fileobj = open(filename, mode)
-        self.files = []
+        self.files = OrderedDict()
         self._parse_files()
 
     def __enter__(self):
@@ -54,8 +54,9 @@ class EnoteBackup:
                 mtime = int(mtime.strip(b'\x00'))
             is_dir = mode[1] == ord('4')
 
-            self.files.append(EnoteBackupFile(filename=filename, is_dir=is_dir,
-                size=size, mtime=mtime, offset=self.fileobj.tell()))
+            self.files[filename] = EnoteBackupFile(filename=filename,
+                is_dir=is_dir, size=size, mtime=mtime,
+                offset=self.fileobj.tell())
 
             size_padded = (size >> 9) << 9
             if size & ((1 << 9) - 1) != 0:
@@ -63,16 +64,13 @@ class EnoteBackup:
             self.fileobj.seek(size_padded, io.SEEK_CUR)
 
     def list_files(self):
-        return iter(self.files)
+        return iter(self.files.values())
 
     def find_file(self, path):
         if isinstance(path, str):
             path = path.encode('utf-8')
 
-        for f in self.files:
-            if f.filename == path:
-                return f
-        return None
+        return self.files.get(path)
 
     def extract_file(self, f):
         self.fileobj.seek(f.offset)
