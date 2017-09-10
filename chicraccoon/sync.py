@@ -1,3 +1,5 @@
+import calendar
+import datetime
 import json
 import os
 import os.path
@@ -31,7 +33,9 @@ class LocalNotebook:
             'forms': {},
             'pages': {},
             'notebooks': {},
-            'images': {}
+            'images': {},
+            'schedules': {},
+            'sch_pages': {}
         }
 
         if not os.path.exists(path):
@@ -67,7 +71,9 @@ class LocalNotebook:
         table_name = {
             'forms': 'forms',
             'pages': 'pages',
-            'notebooks': 'notes'
+            'notebooks': 'notes',
+            'schedules': 'schedules',
+            'sch_pages': 'schedule_pages'
             }[kind]
 
         self.d[kind] = {}
@@ -92,6 +98,26 @@ class LocalNotebook:
                 elif kind == 'notebooks':
                     self.d[kind][id_] = {
                         'pages': self.load_page_order(id_, backup)
+                    }
+                elif kind == 'schedules':
+                    cursor_pages = db.execute(
+                        '''SELECT id
+                           FROM schedule_pages
+                           WHERE schedule_id=?
+                           ORDER BY id ASC''',
+                        (id_, ))
+                    pages = [x['id'] for x in cursor_pages.fetchall()]
+
+                    self.d[kind][id_] = {
+                        'start_date': obj['start_date'],
+                        'end_date': obj['end_date'],
+                        'pages': pages
+                    }
+                elif kind == 'sch_pages':
+                    self.d[kind][id_] = {
+                        'start_date': obj['start_date'],
+                        'end_date': obj['end_date'],
+                        'touched': bool(obj['modify'])
                     }
 
             objects = cursor.fetchmany()
@@ -167,6 +193,9 @@ class LocalNotebook:
         notebook_dirname = lambda x: 'n{:03}'.format(x)
         page_filename = lambda p, n: 'n{:03}/p{:06}.html'.format(n, p)
         notebook_covername = lambda x: 'images/note/n{:07x}_0.png'.format(x)
+        schedule_dirname = lambda x: 's{:03}'.format(x)
+        sch_page_filename = lambda p, n: 's{:03}/p{:06}.html'.format(n, p)
+        schedule_covername = lambda x: 'images/schedule/s{:07x}_0.png'.format(x)
         def form_filename(id_, thumb=False):
             notebook = self.d['forms'][id_]['notebook']
             if notebook == -1:
@@ -186,6 +215,15 @@ class LocalNotebook:
                 thumb='thumbnail/' if thumb else '',
                 tp='t' if thumb else 'p',
                 id=id_, nb=notebook, layer=layer)
+        def sch_form_filename(id_, schedule):
+            return 'images/sch_form/s{sch:06x}/f{id:07x}_0.png'.format(
+                sch=schedule,
+                id=id_)
+        def sch_page_imagename(id_, schedule, layer, thumb=False):
+            return 'images/{thumb}sch_page/s{sch:06x}/{tp}{id:07x}_{layer}.png'.format(
+                thumb='thumbnail/' if thumb else '',
+                tp='t' if thumb else 'p',
+                id=id_, sch=schedule, layer=layer)
 
 
         # copy over static files
@@ -200,7 +238,9 @@ class LocalNotebook:
         # generate HTML
         env = Environment(
             loader=PackageLoader('chicraccoon', 'web_templates'),
-            autoescape=select_autoescape(['html'])
+            autoescape=select_autoescape(['html']),
+            trim_blocks=True,
+            lstrip_blocks=True
         )
 
         # generate index page
@@ -214,9 +254,20 @@ class LocalNotebook:
                 'link': '{}/index.html'.format(notebook_dirname(id_)),
                 'cover': cover
             })
+        schedules = []
+        for id_ in self.d['schedules']:
+            cover = schedule_covername(id_)
+            if not os.path.exists(self._path(cover)):
+                cover = 'static/schedule_default.png'
+            schedules.append({
+                'link': '{}/index.html'.format(schedule_dirname(id_)),
+                'cover': cover
+            })
 
         with open(self._path('index.html'), 'w') as f:
-            f.write(index_template.render(notebooks=notebooks))
+            f.write(index_template.render(
+                notebooks=notebooks,
+                schedules=schedules))
 
         # generate note and notebook pages
         notebook_template = env.get_template('notebook.html')
@@ -260,6 +311,85 @@ class LocalNotebook:
             with open(self._path(notebook_dirname(id_), 'index.html'), 'w') as f:
                 f.write(notebook_template.render(pages=pages, base_dir='../'))
 
+        # generate schedule pages
+        one_day = datetime.timedelta(days=1)
+        parse_date = lambda x: datetime.datetime.utcfromtimestamp(x).date()
+        schedule_template = env.get_template('schedule.html')
+        sch_page_template = env.get_template('schedule_page.html')
+        for id_, schedule in self.d['schedules'].items():
+            self._mkdir(schedule_dirname(id_))
+
+            page_objects = list([(x, self.d['sch_pages'][x])
+                                 for x in schedule['pages']])
+            start_date = parse_date(schedule['start_date'])
+            end_date = parse_date(schedule['end_date'])
+
+            calendar = []
+            last_month = -1
+            week = []
+            date = start_date
+            date -= one_day * date.weekday() # go to beginning of the week
+            page = 0
+            while date <= end_date:
+                while (page < len(page_objects) - 1) and \
+                    (date > parse_date(page_objects[page][1]['end_date'])):
+                    page += 1
+
+                week.append({
+                    'day': date.day,
+                    'link': sch_page_filename(page_objects[page][0], id_),
+                    'touched': page_objects[page][1]['touched']
+                })
+
+                if date.weekday() == 6:
+                    if last_month != date.month:
+                        calendar.append({
+                            'days': week,
+                            'month': date.strftime('%B %Y')
+                        })
+                        last_month = date.month
+                    else:
+                        calendar.append({'days': week})
+                    week = []
+
+                date += one_day
+
+            if len(week) > 0:
+                calendar.append(week)
+                week = []
+
+            with open(self._path(schedule_dirname(id_), 'index.html'), 'w') as f:
+                f.write(schedule_template.render(
+                    calendar=calendar,
+                    base_dir='../'))
+
+            for i, (page_id, page) in enumerate(page_objects):
+                layers = [sch_form_filename(page_id, id_)]
+
+                if os.path.exists(self._path(sch_page_imagename(page_id, id_, 0))):
+                    layers.append(sch_page_imagename(page_id, id_, 0))
+                    layers.append(sch_page_imagename(page_id, id_, 1))
+
+                prev_link = None
+                if i != 0:
+                    prev_link = sch_page_filename(page_objects[i - 1][0], id_)
+
+                next_link = None
+                if i != len(page_objects) - 1:
+                    next_link = sch_page_filename(page_objects[i + 1][0], id_)
+
+                start_date = parse_date(page['start_date']).isoformat()
+                end_date = parse_date(page['end_date']).isoformat()
+
+                with open(self._path(sch_page_filename(page_id, id_)), 'w') as f:
+                    f.write(sch_page_template.render(
+                        base_dir='../',
+                        layers=layers,
+                        prev_link=prev_link,
+                        next_link=next_link,
+                        start_date=start_date,
+                        end_date=end_date))
+
 
     def update(self, backup):
         with open(self._path('tmp.sqlite3'), 'wb') as f:
@@ -271,6 +401,8 @@ class LocalNotebook:
         self.update_metadata('forms', db, backup)
         self.update_metadata('notebooks', db, backup)
         self.update_metadata('pages', db, backup)
+        self.update_metadata('schedules', db, backup)
+        self.update_metadata('sch_pages', db, backup)
 
         db.close()
         os.remove(self._path('tmp.sqlite3'))

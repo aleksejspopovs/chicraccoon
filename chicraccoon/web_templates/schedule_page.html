@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block viewport_width %}600{% endblock %}
+{% block title %}Schedule{% endblock %}
+{% block body %}
+    <a class="back" href="index.html">⌂ back</a>
+    <span class="layer-container">
+        {% for l in layers %}
+        <span class="layer" style="-webkit-mask-image: url('{{base_dir}}{{l}}')"></span>
+        {% endfor %}
+    </span>
+
+    <div class="pagination">
+        {% if prev_link %}
+        <a href="{{base_dir}}{{prev_link}}">← prev</a>
+        {% endif %}
+        {{start_date}} &mdash; {{end_date}}
+        {% if next_link %}
+        <a href="{{base_dir}}{{next_link}}">next →</a>
+        {% endif %}
+    </div>
+{% endblock %}

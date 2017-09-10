@@ -2,6 +2,7 @@ body {
     max-width: 1200px;
     margin-left: auto;
     margin-right: auto;
+    font-size: 16pt;
 }
 
 a.back {
@@ -45,9 +46,32 @@ a.back {
 .pagination {
     width: 100%;
     text-align: center;
-    font-size: 14pt;
 }
 
 .layer:nth-child(2) {
     background: #800080;
+}
+
+.touched {
+    font-weight: bold;
+}
+
+.calendar {
+    margin-left: auto;
+    margin-right: auto;
+    text-align: center;
+    font-size: 20pt;
+}
+
+.calendar-month {
+    text-align: left;
+    font-style: italic;
+}
+
+.calendar td {
+    padding: 7px;
+}
+
+.calendar a, .calendar a:visited {
+    color: #00F;
 }

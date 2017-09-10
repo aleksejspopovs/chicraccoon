@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block viewport_width %}1200{% endblock %}
+{% block title %}Schedule{% endblock %}
+{% block body %}
+    <a class="back" href="../index.html">⌂ back</a>
+
+    <table class="calendar">
+        <thead>
+            <tr>
+                <td>Mon</td>
+                <td>Tue</td>
+                <td>Wed</td>
+                <td>Thu</td>
+                <td>Fri</td>
+                <td>Sun</td>
+                <td>Sat</td>
+            </tr>
+        </thead>
+        <tbody>
+        {% for week in calendar %}
+            <tr>
+                {% for day in week.days %}
+                    {% if day.touched %}
+                        {% set extraclass = 'touched' %}
+                    {% endif %}
+                    <td class='{{extraclass}}'><a href="{{base_dir}}{{day.link}}">{{day.day}}</a></td>
+                {% endfor %}
+                {% if week.month %}
+                    <td class='calendar-month'>{{week.month}}</td>
+                {% endif %}
+            </tr>
+        {% endfor %}
+    </tbody>
+    </table>
+{% endblock %}
