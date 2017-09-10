@@ -31,7 +31,7 @@ class LocalNotebook:
         }
 
         if not os.path.exists(path):
-            self.path.makedirs(path)
+            os.mkdir(path)
 
         if os.path.exists(self._path('data.json')):
             with open(self._path('data.json')) as f:
