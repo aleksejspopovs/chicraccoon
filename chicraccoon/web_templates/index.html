@@ -1,0 +1,9 @@
+{% extends "base.html" %}
+{% block title %}Notebooks{% endblock %}
+{% block body %}
+    <div>
+    {% for nb in notebooks %}
+        <a href="{{base_dir}}{{nb.link}}"><img src="{{base_dir}}{{nb.cover}}"></a>
+    {% endfor %}
+    </div>
+{% endblock %}

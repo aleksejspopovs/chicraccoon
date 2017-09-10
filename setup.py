@@ -31,7 +31,11 @@ setup(
 
     packages=['chicraccoon'],
 
-    install_requires=['Pillow'],
+    install_requires=['Pillow', 'Jinja2'],
+
+    package_data={
+        'chicraccoon': ['web_templates/*'],
+    },
 
     entry_points={
         'console_scripts': [

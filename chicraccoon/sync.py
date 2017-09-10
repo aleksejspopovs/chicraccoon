@@ -1,11 +1,15 @@
+import json
 import os
 import os.path
-import json
+import re
+import shutil
 import sqlite3
 import struct
 import sys
 
+from jinja2 import Environment, PackageLoader, select_autoescape
 from PIL import Image
+from pkg_resources import ResourceManager, get_provider
 
 from chicraccoon.enotebackup import EnoteBackup
 
@@ -35,7 +39,11 @@ class LocalNotebook:
 
         if os.path.exists(self._path('data.json')):
             with open(self._path('data.json')) as f:
-                self.d = json.load(f)
+                # JSON doesn't allow integral keys, so they're actually
+                # stored as strings. the hook converts them back.
+                int_maybe = lambda x: int(x) if x.isnumeric() else x
+                pairs_hook = lambda pairs: {int_maybe(k):v for k,v in pairs}
+                self.d = json.load(f, object_pairs_hook=pairs_hook)
 
     def save(self):
         with open(self._path('data.json'), 'w') as f:
@@ -102,30 +110,32 @@ class LocalNotebook:
         basename = basename[:-4] # removing '.raw'
         return self._path('images', '{}_{}.png'.format(basename, layer))
 
+    def _mkdir(self, *path):
+        try:
+            os.mkdir(self._path(*path))
+        except FileExistsError:
+            pass
+
     def convert_image(self, basename, image):
         for i, layer in enumerate(image.list_layers()):
             image = grayscale_to_mask(layer.to_pil())
             image.save(self._image_path(basename, i))
 
     def update_images(self, backup):
-        try:
-            os.mkdir(self._path('images'))
-        except FileExistsError:
-            pass
+        self._mkdir('images')
 
         seen_images = set()
         for f in backup.list_files():
             filename = f.filename.decode('utf-8').lower()
 
             if f.is_dir:
-                try:
-                    os.mkdir(self._path('images', filename))
-                except FileExistsError:
-                    pass
-                continue
+                self._mkdir('images', filename)
 
             if not filename.endswith('.raw'):
                 continue
+
+            # flatten directories that are unnecessarily subdivided
+            filename = re.sub(r'/[\da-f]{2}/', '/', filename)
 
             seen_images.add(filename)
             if filename not in self.d['images']:
@@ -153,6 +163,103 @@ class LocalNotebook:
         for filename in files_to_delete:
             del self.d['images'][filename]
 
+    def regenerate_web(self):
+        notebook_dirname = lambda x: 'n{:03}'.format(x)
+        page_filename = lambda p, n: 'n{:03}/p{:06}.html'.format(n, p)
+        notebook_covername = lambda x: 'images/note/n{:07x}_0.png'.format(x)
+        def form_filename(id_, thumb=False):
+            notebook = self.d['forms'][id_]['notebook']
+            if notebook == -1:
+                # uform
+                return 'images/{thumb}uform/f{id:07x}_0.png'.format(
+                    thumb='thumbnail/' if thumb else '', id=id_)
+            elif notebook == 0:
+                # built-in form
+                return 'images/{thumb}form/f{id:07x}_0.png'.format(
+                    thumb='thumbnail/' if thumb else '', id=id_)
+            else:
+                # imported form
+                return 'images/{thumb}impt/n{nb:06x}/f{id:07x}_0.png'.format(
+                    thumb='thumbnail/' if thumb else '', id=id_, nb=notebook)
+        def page_imagename(id_, notebook, layer, thumb=False):
+            return 'images/{thumb}page/n{nb:06x}/{tp}{id:07x}_{layer}.png'.format(
+                thumb='thumbnail/' if thumb else '',
+                tp='t' if thumb else 'p',
+                id=id_, nb=notebook, layer=layer)
+
+
+        # copy over static files
+        self._mkdir('static')
+
+        provider = get_provider('chicraccoon')
+        static_dir = provider.get_resource_filename(
+            ResourceManager(), 'web_static')
+        for entry in os.scandir(static_dir):
+            shutil.copy(entry.path, self._path('static'))
+
+        # generate HTML
+        env = Environment(
+            loader=PackageLoader('chicraccoon', 'web_templates'),
+            autoescape=select_autoescape(['html'])
+        )
+
+        # generate index page
+        index_template = env.get_template('index.html')
+        notebooks = []
+        for id_ in self.d['notebooks']:
+            cover = notebook_covername(id_)
+            if not os.path.exists(self._path(cover)):
+                cover = 'static/notebook_default.png'
+            notebooks.append({
+                'link': '{}/index.html'.format(notebook_dirname(id_)),
+                'cover': cover
+            })
+
+        with open(self._path('index.html'), 'w') as f:
+            f.write(index_template.render(notebooks=notebooks))
+
+        # generate note and notebook pages
+        notebook_template = env.get_template('notebook.html')
+        page_template = env.get_template('notebook_page.html')
+        for id_, notebook in self.d['notebooks'].items():
+            self._mkdir(notebook_dirname(id_))
+
+            pages = []
+            page_ids = notebook['pages']
+            for i, page_id in enumerate(page_ids):
+                page = self.d['pages'][page_id]
+                thumb_layers = [form_filename(page['form'], True)]
+                layers = [form_filename(page['form'])]
+
+                if os.path.exists(self._path(page_imagename(page_id, id_, 0))):
+                    thumb_layers.append(page_imagename(page_id, id_, 0, True))
+                    thumb_layers.append(page_imagename(page_id, id_, 1, True))
+                    layers.append(page_imagename(page_id, id_, 0))
+                    layers.append(page_imagename(page_id, id_, 1))
+
+                prev_link = None
+                if i != 0:
+                    prev_link = page_filename(page_ids[i - 1], id_)
+
+                next_link = None
+                if i != len(page_ids) - 1:
+                    next_link = page_filename(page_ids[i + 1], id_)
+
+                with open(self._path(page_filename(page_id, id_)), 'w') as f:
+                    f.write(page_template.render(
+                        layers=layers,
+                        base_dir='../',
+                        page_num=i+1,
+                        pages_total=len(page_ids),
+                        prev_link=prev_link,
+                        next_link=next_link))
+
+                pages.append({'layers': thumb_layers,
+                    'link': page_filename(page_id, id_)})
+
+            with open(self._path(notebook_dirname(id_), 'index.html'), 'w') as f:
+                f.write(notebook_template.render(pages=pages, base_dir='../'))
+
 
     def update(self, backup):
         with open(self._path('tmp.sqlite3'), 'wb') as f:
@@ -169,6 +276,7 @@ class LocalNotebook:
         os.remove(self._path('tmp.sqlite3'))
 
         self.update_images(backup)
+        self.regenerate_web()
 
 def main():
     if len(sys.argv) != 3:

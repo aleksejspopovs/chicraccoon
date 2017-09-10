@@ -1,0 +1,53 @@
+body {
+    max-width: 1000px;
+    margin-left: auto;
+    margin-right: auto;
+}
+
+a.back {
+    display: block;
+    margin-bottom: 15px;
+}
+
+.layer-container {
+    display: block;
+    width: 600px;
+    font-size: 0;
+    margin-left: auto;
+    margin-right: auto;
+}
+
+.layer-container.thumb {
+    display: inline;
+    width: 150px;
+}
+
+.layer {
+    display: inline-block;
+    width: 600px;
+    height: 700px;
+    background: #000;
+}
+
+.layer:not(:first-child) {
+    margin-left: -600px;
+}
+
+.layer.thumb:not(:first-child) {
+    margin-left: -150px;
+}
+
+.thumb {
+    width: 150px;
+    height: 175px;
+}
+
+.pagination {
+    width: 100%;
+    text-align: center;
+    font-size: 14pt;
+}
+
+.layer:nth-child(2) {
+    background: #800080;
+}

@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block title %}Notebook {{id}}{% endblock %}
+{% block body %}
+    <a class="back" href="../index.html">⌂ back</a>
+    {% for n in pages %}
+        <a class="layer-container thumb" href="{{base_dir}}{{n.link}}">
+            {% for l in n.layers %}
+            <span class="layer thumb" style="-webkit-mask-image: url('{{base_dir}}{{l}}')"></span>
+            {% endfor %}
+        </a>
+    {% endfor %}
+{% endblock %}
