@@ -50,9 +50,6 @@ class LocalNotebook:
     def __exit__(self, exc_type, exc_value, traceback):
         self.save()
 
-    def delete_object(self, kind, id_):
-        assert False
-
     def regenerate_object(self, kind, id_, backup):
         pass
         # assert False
