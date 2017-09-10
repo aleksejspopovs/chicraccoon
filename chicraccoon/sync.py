@@ -7,7 +7,7 @@ import sys
 
 from PIL import Image
 
-from enotebackup import EnoteBackup
+from chicraccoon.enotebackup import EnoteBackup
 
 def grayscale_to_mask(image):
     pixels = image.tobytes()

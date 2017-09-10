@@ -5,8 +5,7 @@ from enum import Enum
 
 from PIL import Image
 
-from lzrw3 import lzrw3_decompress
-
+from chicraccoon.lzrw3 import lzrw3_decompress
 
 class EnoteImageMode(Enum):
     thumbnail = 0

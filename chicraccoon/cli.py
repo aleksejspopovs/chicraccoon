@@ -1,6 +1,6 @@
 import sys
 
-from enotebackup import EnoteBackup
+from chicraccoon.enotebackup import EnoteBackup
 
 def cmd_list(backup_path):
     with EnoteBackup(backup_path) as backup:

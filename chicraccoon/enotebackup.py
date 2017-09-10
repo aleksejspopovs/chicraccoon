@@ -2,8 +2,7 @@ import io
 
 from collections import namedtuple, OrderedDict
 
-from enoteimage import EnoteImage
-
+from chicraccoon.enoteimage import EnoteImage
 
 def split_into_blocks(s, block_sizes):
     before = 0
