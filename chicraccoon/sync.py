@@ -50,10 +50,6 @@ class LocalNotebook:
     def __exit__(self, exc_type, exc_value, traceback):
         self.save()
 
-    def regenerate_object(self, kind, id_, backup):
-        pass
-        # assert False
-
     def load_page_order(self, id_, backup):
         filename = 'PAGE/N{id:06X}/PAGE_ORDER.bin'.format(id=id_)
         data = backup.extract_file(backup.find_file(filename))
@@ -64,11 +60,6 @@ class LocalNotebook:
             'forms': 'forms',
             'pages': 'pages',
             'notebooks': 'notes'
-            }[kind]
-        singular = {
-            'forms': 'form',
-            'pages': 'page',
-            'notebooks': 'notebook'
             }[kind]
 
         self.d[kind] = {}
