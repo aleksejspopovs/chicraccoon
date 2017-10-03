@@ -75,3 +75,7 @@ a.back {
 .calendar a, .calendar a:visited {
     color: #00F;
 }
+
+.today {
+    background: #e67ee6;
+}

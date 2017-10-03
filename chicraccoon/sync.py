@@ -337,6 +337,7 @@ class LocalNotebook:
 
                 week.append({
                     'day': date.day,
+                    'date': date.strftime('%Y-%m-%d'),
                     'link': sch_page_filename(page_objects[page][0], id_),
                     'touched': page_objects[page][1]['touched']
                 })

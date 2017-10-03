@@ -2,6 +2,22 @@
 {% block viewport_width %}1200{% endblock %}
 {% block title %}Schedule{% endblock %}
 {% block body %}
+    <script>
+        function leftpad(s, n) {
+            return s.toString().padStart(n, '0');
+        }
+
+        window.addEventListener('load', function () {
+            var date = new Date();
+            var el_id = ('day_' + leftpad(date.getFullYear(), 4) + '-'
+                         + leftpad(date.getMonth() + 1, 2) + '-'
+                         + leftpad(date.getDay() + 1, 2));
+            var el = document.getElementById(el_id);
+            if (el !== undefined) {
+                el.className = el.className + " today";
+            }
+        });
+    </script>
     <a class="back" href="../index.html">⌂ back</a>
 
     <table class="calendar">
@@ -23,7 +39,8 @@
                     {% if day.touched %}
                         {% set extraclass = 'touched' %}
                     {% endif %}
-                    <td class='{{extraclass}}'><a href="{{base_dir}}{{day.link}}">{{day.day}}</a></td>
+
+                    <td id='day_{{day.date}}' class='{{extraclass}}'><a href="{{base_dir}}{{day.link}}">{{day.day}}</a></td>
                 {% endfor %}
                 {% if week.month %}
                     <td class='calendar-month'>{{week.month}}</td>
