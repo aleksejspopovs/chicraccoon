@@ -91,12 +91,9 @@ class EnoteImage:
 
             self.layers.append(EnoteImageLayer(pixel_data))
 
-            size_padded = (layer_size >> 9) << 9
-            # if layer_size & ((1 << 9) - 1) != 0:
-            #     size_padded += 1 << 9
-            # it appears that padding is always added, even if layer_size is
-            # a multiple of 512
-            size_padded += 1 << 9
+            size_padded = ((layer_size + 4) >> 9) << 9
+            if (layer_size + 4) & ((1 << 9) - 1) != 0:
+                size_padded += 1 << 9
             skip += size_padded
 
     def list_layers(self):
