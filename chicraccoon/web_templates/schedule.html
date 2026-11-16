@@ -13,7 +13,7 @@
                          + leftpad(date.getMonth() + 1, 2) + '-'
                          + leftpad(date.getDate(), 2));
             var el = document.getElementById(el_id);
-            if (el !== undefined) {
+            if (el) {
                 el.className = el.className + " today";
             }
         });
@@ -28,8 +28,8 @@
                 <td>Wed</td>
                 <td>Thu</td>
                 <td>Fri</td>
-                <td>Sun</td>
                 <td>Sat</td>
+                <td>Sun</td>
             </tr>
         </thead>
         <tbody>
