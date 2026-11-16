@@ -133,8 +133,9 @@ class LocalNotebook:
                 elif kind == 'todo_pages':
                     self.d[kind][id_] = {
                         'form': obj['form_id'],
-                        'checked': bool(obj['checked']),
-                        'priority': obj['priority']
+                        # bitmasks over the (up to 9) rows of a ToDo page
+                        'checked': obj['checked'],
+                        'starred': obj['priority']
                     }
                 elif kind == 'schedules':
                     cursor_pages = db.execute(
