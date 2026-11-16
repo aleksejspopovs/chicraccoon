@@ -11,7 +11,6 @@ import sys
 
 from jinja2 import Environment, PackageLoader, select_autoescape
 from PIL import Image
-from pkg_resources import ResourceManager, get_provider
 
 from chicraccoon.enotebackup import EnoteBackup
 
@@ -35,22 +34,24 @@ class LocalNotebook:
             'notebooks': {},
             'images': {},
             'schedules': {},
-            'sch_pages': {}
+            'sch_pages': {},
+            'todos': {},
+            'todo_pages': {}
         }
 
         if not os.path.exists(path):
             os.mkdir(path)
 
         if os.path.exists(self._path('data.json')):
-            with open(self._path('data.json')) as f:
+            with open(self._path('data.json'), encoding='utf-8') as f:
                 # JSON doesn't allow integral keys, so they're actually
                 # stored as strings. the hook converts them back.
                 int_maybe = lambda x: int(x) if x.isnumeric() else x
                 pairs_hook = lambda pairs: {int_maybe(k):v for k,v in pairs}
-                self.d = json.load(f, object_pairs_hook=pairs_hook)
+                self.d.update(json.load(f, object_pairs_hook=pairs_hook))
 
     def save(self):
-        with open(self._path('data.json'), 'w') as f:
+        with open(self._path('data.json'), 'w', encoding='utf-8') as f:
             json.dump(self.d, f)
 
     def _path(self, *parts):
@@ -62,9 +63,13 @@ class LocalNotebook:
     def __exit__(self, exc_type, exc_value, traceback):
         self.save()
 
-    def load_page_order(self, id_, backup):
-        filename = 'PAGE/N{id:06X}/PAGE_ORDER.bin'.format(id=id_)
-        data = backup.extract_file(backup.find_file(filename))
+    def load_page_order(self, id_, backup, folder='PAGE'):
+        filename = '{folder}/N{id:06X}/PAGE_ORDER.bin'.format(
+            folder=folder, id=id_)
+        f = backup.find_file(filename)
+        if f is None:
+            return None
+        data = backup.extract_file(f)
         return [x for (x, ) in struct.iter_unpack('<L', data)]
 
     def update_metadata(self, kind, db, backup):
@@ -73,10 +78,19 @@ class LocalNotebook:
             'pages': 'pages',
             'notebooks': 'notes',
             'schedules': 'schedules',
-            'sch_pages': 'schedule_pages'
+            'sch_pages': 'schedule_pages',
+            'todos': 'todos',
+            'todo_pages': 'todo_pages'
             }[kind]
 
         self.d[kind] = {}
+
+        # ToDo books only exist on newer models (e.g. WG-PN1 firmware 1.50)
+        has_table = db.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
+            (table_name, )).fetchone()
+        if not has_table:
+            return
 
         # SQL prepared statements don't support placeholders in the
         # FROM clause
@@ -97,7 +111,31 @@ class LocalNotebook:
                     }
                 elif kind == 'notebooks':
                     self.d[kind][id_] = {
-                        'pages': self.load_page_order(id_, backup)
+                        'pages': self.load_page_order(id_, backup) or []
+                    }
+                elif kind == 'todos':
+                    cursor_pages = db.execute(
+                        '''SELECT id
+                           FROM todo_pages
+                           WHERE todo_id=?
+                           ORDER BY id ASC''',
+                        (id_, ))
+                    pages = [x['id'] for x in cursor_pages.fetchall()]
+                    order = self.load_page_order(id_, backup, 'TODO_PAGE')
+                    if order:
+                        # keep the on-device order, drop stale entries
+                        ordered = [p for p in order if p in pages]
+                        pages = ordered + [p for p in pages
+                                           if p not in ordered]
+                    self.d[kind][id_] = {
+                        'pages': pages
+                    }
+                elif kind == 'todo_pages':
+                    self.d[kind][id_] = {
+                        'form': obj['form_id'],
+                        # bitmasks over the (up to 9) rows of a ToDo page
+                        'checked': obj['checked'],
+                        'starred': obj['priority']
                     }
                 elif kind == 'schedules':
                     cursor_pages = db.execute(
@@ -137,14 +175,14 @@ class LocalNotebook:
         return self._path('images', '{}_{}.png'.format(basename, layer))
 
     def _mkdir(self, *path):
-        try:
-            os.mkdir(self._path(*path))
-        except FileExistsError:
-            pass
+        os.makedirs(self._path(*path), exist_ok=True)
 
     def convert_image(self, basename, image):
         for i, layer in enumerate(image.list_layers()):
             image = grayscale_to_mask(layer.to_pil())
+            # backups don't always list a directory before its files
+            os.makedirs(os.path.dirname(self._image_path(basename, i)),
+                        exist_ok=True)
             image.save(self._image_path(basename, i))
 
     def update_images(self, backup):
@@ -172,7 +210,13 @@ class LocalNotebook:
 
             if f.mtime > self.d['images'][filename]['mtime']:
                 print('file {} updated, converting'.format(filename))
-                image = backup.extract_image(f)
+                try:
+                    image = backup.extract_image(f)
+                except ValueError as e:
+                    # unknown image type (e.g. from a newer model): skip it
+                    # instead of aborting the whole sync
+                    print('file {} skipped: {}'.format(filename, e))
+                    continue
                 self.d['images'][filename]['mtime'] = f.mtime
                 self.d['images'][filename]['layers'] = image.layer_count()
                 self.convert_image(filename, image)
@@ -224,14 +268,29 @@ class LocalNotebook:
                 thumb='thumbnail/' if thumb else '',
                 tp='t' if thumb else 'p',
                 id=id_, sch=schedule, layer=layer)
+        todo_dirname = lambda x: 't{:03}'.format(x)
+        todo_page_filename = lambda p, n: 't{:03}/p{:06}.html'.format(n, p)
+        todo_covername = lambda x: 'images/todo/n{:07x}_0.png'.format(x)
+        def todo_form_filename(id_, thumb=False):
+            return 'images/{thumb}todo_form/f{id:07x}_0.png'.format(
+                thumb='todo_thumbnail/' if thumb else '', id=id_)
+        def todo_page_imagename(id_, todo, layer, thumb=False):
+            return 'images/{thumb}todo_page/n{nb:06x}/{tp}{id:07x}_{layer}.png'.format(
+                thumb='todo_thumbnail/' if thumb else '',
+                tp='t' if thumb else 'p',
+                id=id_, nb=todo, layer=layer)
+        def existing_layers(name_for_layer):
+            # pages have a varying number of layers (ToDo pages have three)
+            layers = []
+            while os.path.exists(self._path(name_for_layer(len(layers)))):
+                layers.append(name_for_layer(len(layers)))
+            return layers
 
 
         # copy over static files
         self._mkdir('static')
 
-        provider = get_provider('chicraccoon')
-        static_dir = provider.get_resource_filename(
-            ResourceManager(), 'web_static')
+        static_dir = os.path.join(os.path.dirname(__file__), 'web_static')
         for entry in os.scandir(static_dir):
             shutil.copy(entry.path, self._path('static'))
 
@@ -263,40 +322,51 @@ class LocalNotebook:
                 'link': '{}/index.html'.format(schedule_dirname(id_)),
                 'cover': cover
             })
+        todos = []
+        for id_ in self.d['todos']:
+            cover = todo_covername(id_)
+            if not os.path.exists(self._path(cover)):
+                cover = 'static/notebook_default.png'
+            todos.append({
+                'link': '{}/index.html'.format(todo_dirname(id_)),
+                'cover': cover
+            })
 
-        with open(self._path('index.html'), 'w') as f:
+        with open(self._path('index.html'), 'w', encoding='utf-8') as f:
             f.write(index_template.render(
                 notebooks=notebooks,
-                schedules=schedules))
+                schedules=schedules,
+                todos=todos))
 
         # generate note and notebook pages
         notebook_template = env.get_template('notebook.html')
         page_template = env.get_template('notebook_page.html')
-        for id_, notebook in self.d['notebooks'].items():
-            self._mkdir(notebook_dirname(id_))
+        def render_book(id_, page_ids, page_data, dirname, page_fn,
+                        form_fn, image_fn):
+            self._mkdir(dirname(id_))
+            # skip page ids that have no metadata (stale PAGE_ORDER entries)
+            page_ids = [p for p in page_ids if p in page_data]
 
             pages = []
-            page_ids = notebook['pages']
             for i, page_id in enumerate(page_ids):
-                page = self.d['pages'][page_id]
-                thumb_layers = [form_filename(page['form'], True)]
-                layers = [form_filename(page['form'])]
-
-                if os.path.exists(self._path(page_imagename(page_id, id_, 0))):
-                    thumb_layers.append(page_imagename(page_id, id_, 0, True))
-                    thumb_layers.append(page_imagename(page_id, id_, 1, True))
-                    layers.append(page_imagename(page_id, id_, 0))
-                    layers.append(page_imagename(page_id, id_, 1))
+                page = page_data[page_id]
+                thumb_layers = [form_fn(page['form'], True)]
+                layers = [form_fn(page['form'])]
+                thumb_layers += existing_layers(
+                    lambda l: image_fn(page_id, id_, l, True))
+                layers += existing_layers(
+                    lambda l: image_fn(page_id, id_, l))
 
                 prev_link = None
                 if i != 0:
-                    prev_link = page_filename(page_ids[i - 1], id_)
+                    prev_link = page_fn(page_ids[i - 1], id_)
 
                 next_link = None
                 if i != len(page_ids) - 1:
-                    next_link = page_filename(page_ids[i + 1], id_)
+                    next_link = page_fn(page_ids[i + 1], id_)
 
-                with open(self._path(page_filename(page_id, id_)), 'w') as f:
+                with open(self._path(page_fn(page_id, id_)), 'w',
+                          encoding='utf-8') as f:
                     f.write(page_template.render(
                         layers=layers,
                         base_dir='../',
@@ -306,21 +376,36 @@ class LocalNotebook:
                         next_link=next_link))
 
                 pages.append({'layers': thumb_layers,
-                    'link': page_filename(page_id, id_)})
+                    'link': page_fn(page_id, id_)})
 
-            with open(self._path(notebook_dirname(id_), 'index.html'), 'w') as f:
+            with open(self._path(dirname(id_), 'index.html'), 'w',
+                      encoding='utf-8') as f:
                 f.write(notebook_template.render(pages=pages, base_dir='../'))
+
+        for id_, notebook in self.d['notebooks'].items():
+            render_book(id_, notebook['pages'], self.d['pages'],
+                        notebook_dirname, page_filename, form_filename,
+                        page_imagename)
+
+        for id_, todo in self.d['todos'].items():
+            render_book(id_, todo['pages'], self.d['todo_pages'],
+                        todo_dirname, todo_page_filename, todo_form_filename,
+                        todo_page_imagename)
 
         # generate schedule pages
         one_day = datetime.timedelta(days=1)
-        parse_date = lambda x: datetime.datetime.utcfromtimestamp(x).date()
+        parse_date = lambda x: datetime.datetime.fromtimestamp(
+            x, datetime.timezone.utc).date()
         schedule_template = env.get_template('schedule.html')
         sch_page_template = env.get_template('schedule_page.html')
         for id_, schedule in self.d['schedules'].items():
             self._mkdir(schedule_dirname(id_))
 
             page_objects = list([(x, self.d['sch_pages'][x])
-                                 for x in schedule['pages']])
+                                 for x in schedule['pages']
+                                 if x in self.d['sch_pages']])
+            if not page_objects:
+                continue
             start_date = parse_date(schedule['start_date'])
             end_date = parse_date(schedule['end_date'])
 
@@ -356,10 +441,12 @@ class LocalNotebook:
                 date += one_day
 
             if len(week) > 0:
-                calendar.append(week)
+                # the template expects {'days': [...]}, not a bare list
+                calendar.append({'days': week})
                 week = []
 
-            with open(self._path(schedule_dirname(id_), 'index.html'), 'w') as f:
+            with open(self._path(schedule_dirname(id_), 'index.html'), 'w',
+                      encoding='utf-8') as f:
                 f.write(schedule_template.render(
                     calendar=calendar,
                     base_dir='../'))
@@ -382,7 +469,8 @@ class LocalNotebook:
                 start_date = parse_date(page['start_date']).isoformat()
                 end_date = parse_date(page['end_date']).isoformat()
 
-                with open(self._path(sch_page_filename(page_id, id_)), 'w') as f:
+                with open(self._path(sch_page_filename(page_id, id_)), 'w',
+                          encoding='utf-8') as f:
                     f.write(sch_page_template.render(
                         base_dir='../',
                         layers=layers,
@@ -404,6 +492,8 @@ class LocalNotebook:
         self.update_metadata('pages', db, backup)
         self.update_metadata('schedules', db, backup)
         self.update_metadata('sch_pages', db, backup)
+        self.update_metadata('todos', db, backup)
+        self.update_metadata('todo_pages', db, backup)
 
         db.close()
         os.remove(self._path('tmp.sqlite3'))

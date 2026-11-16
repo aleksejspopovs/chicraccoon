@@ -13,6 +13,9 @@ class EnoteImageMode(Enum):
     uform_thumb = 2
     notebook = 3
     schedule = 4
+    # WG-PN1 (firmware 1.50+): handwritten page tags and ToDo book covers
+    tag = 5
+    todo = 6
 
     def dimensions(self):
         if self == EnoteImageMode.thumbnail:
@@ -25,6 +28,10 @@ class EnoteImageMode(Enum):
             return (220, 292)
         elif self == EnoteImageMode.schedule:
             return (220, 224)
+        elif self == EnoteImageMode.tag:
+            return (340, 120)
+        elif self == EnoteImageMode.todo:
+            return (220, 200)
         assert False
 
     def needs_endianness_hack(self):
@@ -38,7 +45,9 @@ class EnoteImageMode(Enum):
             # every byte encodes two pixels
             if width * height == size * 2:
                 return mode
-        assert False
+        raise ValueError(
+            'unknown image layer size: {} bytes ({} pixels)'.format(
+                size, size * 2))
 
 
 class EnoteImageLayer:
